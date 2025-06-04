@@ -481,6 +481,8 @@ def pack_examples(examples: dict[str, list[list]], seq_length: int) -> dict[str,
 def _pack_ffd(examples: pa.Table, seq_length: int) -> pa.Table:
     """Pack sequences in a pyarrow Table using First Fit Decreasing strategy."""
     packed_columns = []
+    position_ids = []  # Track position IDs for all packed sequences
+
     for column in examples.columns:
         if pyarrow.types.is_list(column.type) or pyarrow.types.is_large_list(column.type):
             if isinstance(column, pa.ChunkedArray):
@@ -537,23 +539,45 @@ def _pack_ffd(examples: pa.Table, seq_length: int) -> pa.Table:
                     if remaining > 0:
                         bins_by_remaining[remaining].append(bin_idx)
 
-            # Reconstruct packed values more efficiently
+            # Reconstruct packed values and position IDs more efficiently
             values_numpy = values.to_numpy()
             packed_values = []
             new_offsets = [0]
+            current_position_ids = []
 
             for _, seq_indices in bins:
+                current_position = 0
                 for seq_idx in seq_indices:
-                    _, start, end = sequences[seq_idx]
+                    seq_len, start, end = sequences[seq_idx]
                     packed_values.extend(values_numpy[start:end])
+                    # Add position IDs for this sequence
+                    current_position_ids.extend(range(current_position, current_position + seq_len))
+                    current_position += seq_len
                 new_offsets.append(len(packed_values))
+
+            # Store position IDs for the first column processing. They should be the same for all columns.
+            if not position_ids:
+                position_ids = current_position_ids
+            elif position_ids != current_position_ids:
+                raise ValueError(
+                    "Position IDs mismatch across columns. Ensure all columns have the same sequence lengths."
+                )
 
             dtype = offsets.type.to_pandas_dtype()
             new_offsets = np.array(new_offsets, dtype=dtype)
             packed_values = pa.array(packed_values, type=values.type)
             column = type(column).from_arrays(new_offsets, packed_values)
+
         packed_columns.append(column)
-    return pa.Table.from_arrays(packed_columns, names=examples.column_names)
+
+    # Add position_ids column
+    position_ids_array = pa.array(position_ids, type=pa.int32())
+    packed_columns.append(position_ids_array)
+
+    # Add position_ids to column names
+    column_names = examples.column_names + ["position_ids"]
+
+    return pa.Table.from_arrays(packed_columns, names=column_names)
 
 
 def _pack_wrapped(examples: pa.Table, seq_length: int) -> pa.Table:
