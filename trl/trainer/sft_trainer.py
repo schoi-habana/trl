@@ -46,6 +46,7 @@ from transformers.utils import is_peft_available
 from ..data_utils import (
     apply_chat_template,
     is_conversational,
+    is_from_value_conversational,
     maybe_convert_to_chatml,
     pack_dataset,
     truncate_dataset,
@@ -607,14 +608,16 @@ class SFTTrainer(Trainer):
 
             if not is_processed:
                 # Convert the dataset to ChatML if needed
-                if isinstance(dataset, Dataset):  # `IterableDataset.map` does not support `desc`
-                    map_kwargs["desc"] = f"Converting {dataset_name} dataset to ChatML"
-                column_names = next(iter(dataset)).keys()
-                dataset = dataset.map(
-                    maybe_convert_to_chatml,
-                    remove_columns="conversations" if "conversations" in column_names else None,
-                    **map_kwargs,
-                )
+                first_example = next(iter(dataset))
+                if is_from_value_conversational(first_example):
+                    if isinstance(dataset, Dataset):  # `IterableDataset.map` does not support `desc`
+                        map_kwargs["desc"] = f"Converting {dataset_name} dataset to ChatML"
+                    column_names = first_example.keys()
+                    dataset = dataset.map(
+                        maybe_convert_to_chatml,
+                        remove_columns="conversations" if "conversations" in column_names else None,  # -> "messages"
+                        **map_kwargs,
+                    )
 
                 # Apply the chat template if needed
                 first_example = next(iter(dataset))
