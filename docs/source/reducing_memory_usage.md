@@ -69,8 +69,8 @@ This technique applies only to SFT.
 
 </Tip>
 
-
 [Truncation](#truncation) has several drawbacks:
+
 1. **Loss of information**: Key data at the end of a sequence may be discarded.
 2. **Choosing truncation length**: Too short loses data; too long undermines efficiency.
 
@@ -80,11 +80,11 @@ Packing, introduced in [Raffel et al., 2020](https://huggingface.co/papers/1910.
     <img src="https://huggingface.co/datasets/trl-lib/documentation-images/resolve/main/packing_2.png" alt="Packing" width="600"/>
 </div>
 
-Packing reduces padding by merging several sequences in one row when possible. We use an advanced method to be near-optimal in the way we pack the dataset. To enable packing, use `packing=True` and in the [`SFTConfig`].
+Packing reduces padding by merging several sequences in one row when possible. We use an advanced method to be near-optimal in the way we pack the dataset. Packing is enabled by default, to disable it, use `packing=False` and in the [`SFTConfig`].
 
 <Tip>
 
-In TRL 0.18 and earlier, packing used a more aggressive method that reduced padding to almost nothing, but had the downside of breaking sequence continuity for a large fraction of the dataset. To revert to this strategy, use `packing_strategy="wrapped"` in `SFTConfig`.
+In TRL 0.18 and earlier, packing used a more aggressive method that reduced padding to almost nothing, but had the downside of breaking sequence continuity for a large fraction of the dataset. To revert to this strategy, use `packing_strategy="wrapped"` in [`SFTConfig`].
 
 </Tip>
 
@@ -96,7 +96,7 @@ training_args = SFTConfig(..., packing=True, max_length=512)
 
 <Tip warning={true}>
 
-Packing may cause batch contamination, where adjacent sequences influence one another. This can be problematic for some applications. For more details, see [#1230](https://github.com/huggingface/trl/issues/1230).
+Packing may cause batch contamination, where adjacent sequences influence one another, because they are in the same row. This can be problematic for some applications (for more details, see [#1230](https://github.com/huggingface/trl/issues/1230)). To avoid this issue, we recommend using Flash Attention 2 (`model_init_kwargs={"attn_implmentation": "flash_attention_2"}`) that properly handles sequence partitionning within a row.
 
 </Tip>
 
@@ -209,6 +209,7 @@ training_args = SFTConfig(
     # Other parameters...
 )
 ```
+
 </Tip>
 
 Under the hood, activation offloading implements PyTorch's [`saved_tensors_hooks`](https://pytorch.org/tutorials/intermediate/autograd_saved_tensors_hooks_tutorial.html#hooks-for-autograd-saved-tensors) to intercept activations during the forward pass. It intelligently manages which tensors to offload based on size and context, avoiding offloading output tensors which would be inefficient. For performance optimization, it can optionally use CUDA streams to overlap computation with CPU-GPU transfers.

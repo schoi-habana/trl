@@ -22,7 +22,6 @@ import torch
 import transformers
 from datasets import Dataset, Image, Sequence, load_dataset
 from packaging import version
-from parameterized import parameterized
 from transformers import (
     AutoModelForCausalLM,
     AutoProcessor,
@@ -39,6 +38,13 @@ from trl.trainer import ConstantLengthDataset, DataCollatorForCompletionOnlyLM
 from trl.trainer.sft_trainer import DataCollatorForLanguageModeling
 
 
+if is_peft_available():
+    from peft import LoraConfig, PeftModel, get_peft_model
+
+if is_vision_available():
+    from PIL import Image as PILImage
+
+
 def formatting_prompts_func(example):
     text = f"### Question: {example['question']}\n ### Answer: {example['answer']}"
     return text
@@ -46,13 +52,6 @@ def formatting_prompts_func(example):
 
 def formatting_func_for_pretokenized(example):
     return example["input_ids"]
-
-
-if is_peft_available():
-    from peft import LoraConfig, PeftModel, get_peft_model
-
-if is_vision_available():
-    from PIL import Image as PILImage
 
 
 class TestDataCollatorForLanguageModeling(unittest.TestCase):
@@ -385,24 +384,6 @@ class SFTTrainerTester(unittest.TestCase):
             for n, param in previous_trainable_params.items():
                 new_param = trainer.model.get_parameter(n)
                 self.assertFalse(torch.equal(param, new_param), f"Parameter {n} has not changed.")
-
-    def test_with_pretokenized_data_packing(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            training_args = SFTConfig(
-                output_dir=tmp_dir,
-                packing=True,
-                report_to="none",
-            )
-
-            trainer = SFTTrainer(
-                model="trl-internal-testing/tiny-Qwen2ForCausalLM-2.5",
-                args=training_args,
-                train_dataset=self.train_dataset_from_pretokenized,
-            )
-
-            trainer.train()
-
-            assert trainer.state.log_history[-1]["train_loss"] is not None
 
     def test_uncorrect_data(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1349,16 +1330,13 @@ class SFTTrainerTester2(unittest.TestCase):
                 new_param = trainer.model.get_parameter(n)
                 self.assertFalse(torch.allclose(param, new_param), f"Parameter {n} has not changed")
 
-    @parameterized.expand([("ffd",), ("wrapped",)])
-    def test_train_packing(self, packing_strategy):
+    def test_train_wrapped_packing(self):
         # Get the dataset
         dataset = load_dataset("trl-internal-testing/zen", "standard_language_modeling", split="train")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Initialize the trainer
-            training_args = SFTConfig(
-                output_dir=tmp_dir, packing=True, packing_strategy=packing_strategy, max_length=10, report_to="none"
-            )
+            training_args = SFTConfig(output_dir=tmp_dir, packing_strategy="wrapped", max_length=10, report_to="none")
             trainer = SFTTrainer(
                 model="trl-internal-testing/tiny-Qwen2ForCausalLM-2.5", args=training_args, train_dataset=dataset
             )

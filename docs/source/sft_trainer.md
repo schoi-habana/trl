@@ -26,6 +26,7 @@ trainer = SFTTrainer(
 )
 trainer.train()
 ```
+
 Make sure to pass the correct value for `max_length` as the default value will be set to `min(tokenizer.model_max_length, 1024)`.
 
 You can also construct a model outside of the trainer and pass it as follows:
