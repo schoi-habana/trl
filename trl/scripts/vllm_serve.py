@@ -49,9 +49,9 @@ if is_uvicorn_available():
 
 if is_vllm_available():
     from vllm import LLM, SamplingParams
-    from vllm.distributed.device_communicators.pynccl import PyNcclCommunicator
+    #from vllm.distributed.device_communicators.pynccl import PyNcclCommunicator
     from vllm.distributed.parallel_state import get_world_group
-    from vllm.distributed.utils import StatelessProcessGroup
+    #from vllm.distributed.utils import StatelessProcessGroup
     from vllm.sampling_params import GuidedDecodingParams
     from vllm.utils import get_open_port
 
@@ -95,22 +95,22 @@ class WeightSyncWorkerExtension:
             world_size (`int`):
                 Total number of participating processes in the update group.
         """
-        if self.pynccl_comm is not None:
-            raise RuntimeError("Weight update group already initialized. Call close_communicator first.")
+        #if self.pynccl_comm is not None:
+        #    raise RuntimeError("Weight update group already initialized. Call close_communicator first.")
 
         # Get the rank of the current worker in the global world group.
         rank = get_world_group().rank
 
         # Create a stateless process group to manage communication between training processes and vLLM workers.
-        pg = StatelessProcessGroup.create(host=host, port=port, rank=rank, world_size=world_size)
+        #pg = StatelessProcessGroup.create(host=host, port=port, rank=rank, world_size=world_size)
 
         # Initialize the NCCL-based communicator for weight synchronization.
-        self.pynccl_comm = PyNcclCommunicator(pg, device=self.device)
+        #self.pynccl_comm = PyNcclCommunicator(pg, device=self.device)
 
         # The client process that sends updated weights has the highest rank (world_size - 1).
         self.client_rank = world_size - 1
 
-    def update_named_param(self, name: str, dtype: torch.dtype, shape: Sequence[int]) -> None:
+    def update_named_param(self, name: str, dtype: torch.dtype, shape: Sequence[int], data: list) -> None:
         """
         Receives updated weights from the client process and updates the named parameter in the model.
 
@@ -122,18 +122,18 @@ class WeightSyncWorkerExtension:
             shape (`Sequence[int]`):
                 Shape of the weight tensor.
         """
-        if self.pynccl_comm is None:
-            raise RuntimeError("Communicator not initialized. Call `init_communicator` first.")
+        #if self.pynccl_comm is None:
+        #    raise RuntimeError("Communicator not initialized. Call `init_communicator` first.")
 
         # Allocate memory for the incoming weight tensor on the correct device.
-        weight = torch.empty(shape, dtype=dtype, device=self.device)
+        #weight = torch.empty(shape, dtype=dtype, device=self.device)
 
         # Use NCCL to broadcast the updated weights from the client (src) to all workers.
-        self.pynccl_comm.broadcast(weight, src=self.client_rank)
-        self.pynccl_comm.group.barrier()
+        #self.pynccl_comm.broadcast(weight, src=self.client_rank)
+        #self.pynccl_comm.group.barrier()
 
         # Load the received weights into the model.
-        self.model_runner.model.load_weights(weights=[(name, weight)])
+        self.model_runner.model.load_weights(weights=[(name, torch.tensor(data, dtype=dtype, device='hpu').reshape(shape))])#weight)])
 
     def close_communicator(self) -> None:
         """
@@ -510,6 +510,7 @@ def main(script_args: ScriptArguments):
         name: str
         dtype: str
         shape: list[int]
+        data: list
 
     @app.post("/update_named_param/")
     async def update_named_param(request: UpdateWeightsRequest):
@@ -529,7 +530,7 @@ def main(script_args: ScriptArguments):
         # So with collective_rpc we need to call it this way:
         # llm.collective_rpc("update_named_param", args=("name", torch.float32, (10, 10)))
         dtype = torch.__getattribute__(request.dtype.split(".")[-1])
-        kwargs = {"method": "update_named_param", "args": (request.name, dtype, tuple(request.shape))}
+        kwargs = {"method": "update_named_param", "args": (request.name, dtype, tuple(request.shape), request.data)}
         for connection in connections:
             connection.send({"type": "fire_and_forget", "method": "collective_rpc", "kwargs": kwargs})
 

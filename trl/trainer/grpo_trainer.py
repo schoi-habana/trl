@@ -847,19 +847,22 @@ class GRPOTrainer(Trainer):
             with gather_if_zero3(list(self.model.parameters())):
                 self.model.merge_adapter()
 
+                target_modules = self.model.peft_config['default'].target_modules
                 # Update vLLM weights while parameters are gathered
                 for name, param in self.model.named_parameters():
-                    # When using PEFT, we need to recover the original parameter name and discard some parameters
-                    name = name.removeprefix("base_model.model.").replace(".base_layer", "")
-                    if self.model.prefix in name:
-                        continue
-                    # When module to save, remove its prefix and discard the original module
-                    if "original_module" in name:
-                        continue
-                    name = name.replace("modules_to_save.default.", "")
+                    for target in target_modules:
+                        if target in name:
+                            # When using PEFT, we need to recover the original parameter name and discard some parameters
+                            name = name.removeprefix("base_model.model.").replace(".base_layer", "")
+                            if self.model.prefix in name:
+                                continue
+                            # When module to save, remove its prefix and discard the original module
+                            if "original_module" in name:
+                                continue
+                            name = name.replace("modules_to_save.default.", "")
 
-                    if self.accelerator.is_main_process:
-                        self.vllm_client.update_named_param(name, param.data)
+                            if self.accelerator.is_main_process:
+                                self.vllm_client.update_named_param(name, param.data)
 
                 # Unmerge adapters while parameters are still gathered
                 self.model.unmerge_adapter()

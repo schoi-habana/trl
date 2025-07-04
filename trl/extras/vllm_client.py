@@ -218,8 +218,8 @@ class VLLMClient:
         time.sleep(0.1)
 
         # Set up the communication group for weight broadcasting
-        pg = StatelessProcessGroup.create(host=self.host, port=self.group_port, rank=self.rank, world_size=world_size)
-        self.pynccl_comm = PyNcclCommunicator(pg, device=0)
+        #pg = StatelessProcessGroup.create(host=self.host, port=self.group_port, rank=self.rank, world_size=world_size)
+        #self.pynccl_comm = PyNcclCommunicator(pg, device=0)
 
         # When the client object is deleted, close the weight update group
         atexit.register(self.close_communicator)
@@ -236,13 +236,16 @@ class VLLMClient:
         """
         dtype, shape = str(weights.dtype), tuple(weights.shape)
         url = f"http://{self.host}:{self.server_port}/update_named_param/"
-        response = self.session.post(url, json={"name": name, "dtype": dtype, "shape": shape})
+        response = self.session.post(url, json={
+                "name": name, "dtype": dtype, "shape": shape,
+                "data":weights.cpu().flatten().tolist(),
+            })
         if response.status_code != 200:
             raise Exception(f"Request failed: {response.status_code}, {response.text}")
 
         # Broadcast the weights to the other processes
-        self.pynccl_comm.broadcast(weights, src=self.rank)
-        self.pynccl_comm.group.barrier()
+        #self.pynccl_comm.broadcast(weights, src=self.rank)
+        #self.pynccl_comm.group.barrier()
 
     def update_model_params(self, model: nn.Module):
         """
